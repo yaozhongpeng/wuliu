@@ -1,23 +1,23 @@
-name: Auto Generate Blob‑URL Sitemap
+name: Auto‑Generate‑Sitemap
 on:
   schedule:
-    - cron: '0 2 * * *'  # UTC 02点=北京时间10点，每日定时
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
-  build_sitemap:
-    runs-on: ubuntu-latest
+  build_sitemap_job:
+    runs-on: ubuntu‑latest
     permissions:
-      contents: read   #只需要读仓库，不需要写权限
+      contents: read
     steps:
-      - name: Checkout repository
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Generate sitemap xml files
+      - name: Write python script
         run: |
-          python3 - << 'PYTHON'
+          cat > make_sitemap.py <<'EOF'
 import os
 import math
 from datetime import datetime
@@ -39,7 +39,7 @@ for root, dirs, files in os.walk("."):
         rel_path = fullpath[2:]
         encoded_rel = urllib.parse.quote(rel_path)
         page_url = BLOB_BASE + encoded_rel
-        mtime = datetime.fromtimestamp(os.path.getmtime(fullpath)).strftime("%Y-%m-%d")
+        mtime = datetime.fromtimestamp(os.path.getmtime(fullpath)).strftime("%Y‑%m‑%d")
         md_url_list.append({"loc": page_url, "lastmod": mtime})
 
 total = len(md_url_list)
@@ -53,7 +53,7 @@ for chunk_idx in range(chunk_count):
     chunk_data = md_url_list[start:end]
     sitemap_filename = f"sitemap_{chunk_idx+1:02d}.xml"
     sub_sitemap_files.append(sitemap_filename)
-    xml_header = '''<?xml version="1.0" encoding="UTF-8"?>
+    xml_header = '''<?xml version="1.0" encoding="UTF‑8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 '''
     xml_body = ""
@@ -67,11 +67,11 @@ for chunk_idx in range(chunk_count):
 '''
     xml_footer = "\n</urlset>"
     out_content = xml_header + xml_body + xml_footer
-    with open(sitemap_filename,"w",encoding="utf-8") as f:
+    with open(sitemap_filename,"w",encoding="utf‑8") as f:
         f.write(out_content)
     print(f"Generated {sitemap_filename}, count:{len(chunk_data)}")
 
-index_header = '''<?xml version="1.0" encoding="UTF-8"?>
+index_header = '''<?xml version="1.0" encoding="UTF‑8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 '''
 index_body = ""
@@ -80,20 +80,23 @@ for sub_file in sub_sitemap_files:
     sub_url = BLOB_BASE + encoded_sub
     index_body += f'''  <sitemap>
     <loc>{sub_url}</loc>
-    <lastmod>{datetime.now().strftime("%Y-%m-%d")}</lastmod>
+    <lastmod>{datetime.now().strftime("%Y‑%m‑%d")}</lastmod>
   </sitemap>
 '''
 index_footer = "\n</sitemapindex>"
 index_content = index_header + index_body + index_footer
-with open(OUTPUT_INDEX,"w",encoding="utf-8") as f:
+with open(OUTPUT_INDEX,"w",encoding="utf‑8") as f:
     f.write(index_content)
 print(f"Generated {OUTPUT_INDEX}, sub‑sitemap:{len(sub_sitemap_files)}")
-PYTHON
+EOF
 
-      - name: Upload sitemap as artifacts
+      - name: Run python sitemap generator
+        run: python3 make_sitemap.py
+
+      - name: Upload sitemap artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sitemap-output
+          name: sitemap‑output
           path: |
             sitemap_index.xml
             sitemap_*.xml
