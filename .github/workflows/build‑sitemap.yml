@@ -1,76 +1,104 @@
-name: Auto Generate Sitemap
+name: Auto Generate Blob‑URL Sitemap
 on:
   push:
-    branches: [ main ]  #你的目标分支，改成你的分支名
+    branches: [ main ]
 
 jobs:
-  sitemap_job:
-    runs-on: ubuntu‑latest
+  build_sitemap:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Generate sitemap.xml by python
+      - name: Generate sitemap_index + split sitemap(github blob url)
         run: |
           python3 - << 'PYTHON'
 import os
+import math
 from datetime import datetime
+import urllib.parse
 
-# 配置
-BASE_URL = "https://yaozhongpeng.github.io/wuliu/"  #替换成你的Github Pages域名
-OUTPUT = "sitemap.xml"
-exclude_files = ["README.md"]
+# ======================配置======================
+# GitHub blob网页基础链接
+BLOB_BASE = "https://github.com/yaozhongpeng/wuliu/blob/main/"
+MAX_URL_PER_SITEMAP = 3000
+EXCLUDE_FILES = {"README.md"}
+OUTPUT_INDEX = "sitemap_index.xml"
+# ================================================
 
-urls = []
-# 遍历仓库全部md文件
+md_url_list = []
+
 for root, dirs, files in os.walk("."):
-    for fname in files:
-        if fname.lower().endswith(".md") and fname not in exclude_files:
-            full_path = os.path.join(root, fname)
-            # 去掉开头./
-            rel_path = full_path[2:]
-            # md转pages访问链接；如果是raw地址就调整这里
-            page_url = BASE_URL + rel_path.replace(".md","")
-            mtime = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y‑%m‑%d")
-            urls.append({"loc":page_url,"lastmod":mtime})
+    for filename in files:
+        if not filename.lower().endswith(".md"):
+            continue
+        if filename in EXCLUDE_FILES:
+            continue
+        fullpath = os.path.join(root, filename)
+        rel_path = fullpath[2:] # 去掉开头 "./"
+        # 对文件路径做url编码，中文转%xx编码，和浏览器地址栏完全一致
+        encoded_rel = urllib.parse.quote(rel_path)
+        page_url = BLOB_BASE + encoded_rel
+        mtime = datetime.fromtimestamp(os.path.getmtime(fullpath)).strftime("%Y-%m-%d")
+        md_url_list.append({"loc": page_url, "lastmod": mtime})
 
-# 如果仓库存在commit_links.json，读取追加commit页面链接
-if os.path.exists("commit_links.json"):
-    import json
-    with open("commit_links.json","r",encoding="utf‑8") as f:
-        link_data = json.load(f)
-    for item in link_data:
-        if "url" in item:
-            urls.append({"loc":item["url"],"lastmod":datetime.now().strftime("%Y‑%m‑%d")})
+total = len(md_url_list)
+print(f"Total md files: {total}")
 
-# 生成sitemap xml
-xml_head = '''<?xml version="1.0" encoding="UTF‑8"?>
+chunk_count = math.ceil(total / MAX_URL_PER_SITEMAP) if total>0 else 0
+sub_sitemap_files = []
+
+for chunk_idx in range(chunk_count):
+    start = chunk_idx * MAX_URL_PER_SITEMAP
+    end = start + MAX_URL_PER_SITEMAP
+    chunk_data = md_url_list[start:end]
+    sitemap_filename = f"sitemap_{chunk_idx+1:02d}.xml"
+    sub_sitemap_files.append(sitemap_filename)
+
+    xml_header = '''<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 '''
-xml_body = ""
-for u in urls:
-    xml_body += f'''  <url>
-    <loc>{u["loc"]}</loc>
-    <lastmod>{u["lastmod"]}</lastmod>
+    xml_body = ""
+    for item in chunk_data:
+        xml_body += f'''  <url>
+    <loc>{item["loc"]}</loc>
+    <lastmod>{item["lastmod"]}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
 '''
-xml_end = "\n</urlset>"
-content = xml_head + xml_body + xml_end
+    xml_footer = "\n</urlset>"
+    out_content = xml_header + xml_body + xml_footer
+    with open(sitemap_filename,"w",encoding="utf-8") as f:
+        f.write(out_content)
+    print(f"Generated {sitemap_filename}, count:{len(chunk_data)}")
 
-with open(OUTPUT,"w",encoding="utf‑8") as f:
-    f.write(content)
-
-print(f"Generated {OUTPUT}, total urls: {len(urls)}")
+# sitemap_index.xml
+index_header = '''<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+'''
+index_body = ""
+for sub_file in sub_sitemap_files:
+    # sitemap xml本身的blob访问链接
+    encoded_sub = urllib.parse.quote(sub_file)
+    sub_url = BLOB_BASE + encoded_sub
+    index_body += f'''  <sitemap>
+    <loc>{sub_url}</loc>
+    <lastmod>{datetime.now().strftime("%Y-%m-%d")}</lastmod>
+  </sitemap>
+'''
+index_footer = "\n</sitemapindex>"
+index_content = index_header + index_body + index_footer
+with open(OUTPUT_INDEX,"w",encoding="utf-8") as f:
+    f.write(index_content)
+print(f"Generated {OUTPUT_INDEX}, sub‑sitemap:{len(sub_sitemap_files)}")
 PYTHON
 
-      - name: Commit & push sitemap.xml back
+      - name: Commit sitemap files into repo root
         run: |
-          git config --global user.name "github‑action‑robot"
+          git config --global user.name "github-action-robot"
           git config --global user.email "action@github.com"
-          git add sitemap.xml
-          # 如果没有变更就跳过提交
-          git diff --cached --exit-code || (git commit -m "ci: auto update sitemap.xml" && git push origin main)
+          git add sitemap_index.xml sitemap_*.xml
+          git diff --cached --exit-code || (git commit -m "ci: update blob‑url sitemap [skip ci]" && git push origin main)
