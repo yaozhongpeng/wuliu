@@ -1,21 +1,19 @@
 name: Auto Generate Blob‑URL Sitemap
 on:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *'  # UTC 02点=北京时间10点，每日定时
   workflow_dispatch:
 
 jobs:
   build_sitemap:
     runs-on: ubuntu-latest
-    # 顶层job权限，强制开启写权限
     permissions:
-      contents: write
+      contents: read   #只需要读仓库，不需要写权限
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: main  # 强制检出main分支，避免detached HEAD
 
       - name: Generate sitemap xml files
         run: |
@@ -92,16 +90,10 @@ with open(OUTPUT_INDEX,"w",encoding="utf-8") as f:
 print(f"Generated {OUTPUT_INDEX}, sub‑sitemap:{len(sub_sitemap_files)}")
 PYTHON
 
-      - name: Commit & Push sitemap files
-        run: |
-          git config --global user.name "github-action-robot"
-          git config --global user.email "action@github.com"
-          git status
-          git add sitemap_index.xml sitemap_*.xml
-          # 检查是否有变更
-          if ! git diff --cached --exit-code; then
-            git commit -m "ci: update blob‑url sitemap [skip ci]"
-            git push origin main
-          else
-            echo "No sitemap changes, skip commit."
-          fi
+      - name: Upload sitemap as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitemap-output
+          path: |
+            sitemap_index.xml
+            sitemap_*.xml
