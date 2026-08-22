@@ -1,0 +1,76 @@
+name: Auto Generate Sitemap
+on:
+  push:
+    branches: [ main ]  #你的目标分支，改成你的分支名
+
+jobs:
+  sitemap_job:
+    runs-on: ubuntu‑latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate sitemap.xml by python
+        run: |
+          python3 - << 'PYTHON'
+import os
+from datetime import datetime
+
+# 配置
+BASE_URL = "https://yaozhongpeng.github.io/wuliu/"  #替换成你的Github Pages域名
+OUTPUT = "sitemap.xml"
+exclude_files = ["README.md"]
+
+urls = []
+# 遍历仓库全部md文件
+for root, dirs, files in os.walk("."):
+    for fname in files:
+        if fname.lower().endswith(".md") and fname not in exclude_files:
+            full_path = os.path.join(root, fname)
+            # 去掉开头./
+            rel_path = full_path[2:]
+            # md转pages访问链接；如果是raw地址就调整这里
+            page_url = BASE_URL + rel_path.replace(".md","")
+            mtime = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y‑%m‑%d")
+            urls.append({"loc":page_url,"lastmod":mtime})
+
+# 如果仓库存在commit_links.json，读取追加commit页面链接
+if os.path.exists("commit_links.json"):
+    import json
+    with open("commit_links.json","r",encoding="utf‑8") as f:
+        link_data = json.load(f)
+    for item in link_data:
+        if "url" in item:
+            urls.append({"loc":item["url"],"lastmod":datetime.now().strftime("%Y‑%m‑%d")})
+
+# 生成sitemap xml
+xml_head = '''<?xml version="1.0" encoding="UTF‑8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+'''
+xml_body = ""
+for u in urls:
+    xml_body += f'''  <url>
+    <loc>{u["loc"]}</loc>
+    <lastmod>{u["lastmod"]}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+'''
+xml_end = "\n</urlset>"
+content = xml_head + xml_body + xml_end
+
+with open(OUTPUT,"w",encoding="utf‑8") as f:
+    f.write(content)
+
+print(f"Generated {OUTPUT}, total urls: {len(urls)}")
+PYTHON
+
+      - name: Commit & push sitemap.xml back
+        run: |
+          git config --global user.name "github‑action‑robot"
+          git config --global user.email "action@github.com"
+          git add sitemap.xml
+          # 如果没有变更就跳过提交
+          git diff --cached --exit-code || (git commit -m "ci: auto update sitemap.xml" && git push origin main)
