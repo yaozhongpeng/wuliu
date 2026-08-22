@@ -1,11 +1,14 @@
 name: Auto Generate Blob‑URL Sitemap
 on:
-  push:
-    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *'  # UTC 02点=北京时间10点，每日定时
+  workflow_dispatch:
 
 jobs:
   build_sitemap:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,16 +23,12 @@ import math
 from datetime import datetime
 import urllib.parse
 
-# ======================配置======================
-# GitHub blob网页基础链接
 BLOB_BASE = "https://github.com/yaozhongpeng/wuliu/blob/main/"
 MAX_URL_PER_SITEMAP = 3000
 EXCLUDE_FILES = {"README.md"}
 OUTPUT_INDEX = "sitemap_index.xml"
-# ================================================
 
 md_url_list = []
-
 for root, dirs, files in os.walk("."):
     for filename in files:
         if not filename.lower().endswith(".md"):
@@ -37,8 +36,7 @@ for root, dirs, files in os.walk("."):
         if filename in EXCLUDE_FILES:
             continue
         fullpath = os.path.join(root, filename)
-        rel_path = fullpath[2:] # 去掉开头 "./"
-        # 对文件路径做url编码，中文转%xx编码，和浏览器地址栏完全一致
+        rel_path = fullpath[2:]
         encoded_rel = urllib.parse.quote(rel_path)
         page_url = BLOB_BASE + encoded_rel
         mtime = datetime.fromtimestamp(os.path.getmtime(fullpath)).strftime("%Y-%m-%d")
@@ -46,7 +44,6 @@ for root, dirs, files in os.walk("."):
 
 total = len(md_url_list)
 print(f"Total md files: {total}")
-
 chunk_count = math.ceil(total / MAX_URL_PER_SITEMAP) if total>0 else 0
 sub_sitemap_files = []
 
@@ -56,7 +53,6 @@ for chunk_idx in range(chunk_count):
     chunk_data = md_url_list[start:end]
     sitemap_filename = f"sitemap_{chunk_idx+1:02d}.xml"
     sub_sitemap_files.append(sitemap_filename)
-
     xml_header = '''<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 '''
@@ -75,13 +71,11 @@ for chunk_idx in range(chunk_count):
         f.write(out_content)
     print(f"Generated {sitemap_filename}, count:{len(chunk_data)}")
 
-# sitemap_index.xml
 index_header = '''<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 '''
 index_body = ""
 for sub_file in sub_sitemap_files:
-    # sitemap xml本身的blob访问链接
     encoded_sub = urllib.parse.quote(sub_file)
     sub_url = BLOB_BASE + encoded_sub
     index_body += f'''  <sitemap>
